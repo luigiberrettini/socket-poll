@@ -2,85 +2,49 @@ using System;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
-using System.Threading.Tasks;
 using Xunit;
-using Xunit.Abstractions;
 
 namespace SocketPoll
 {
-    public class TestSuite : IDisposable
+    public class TestSuite
     {
-        const string IpAddress = "127.0.0.1";
-        const int Port = 1514;
-        const int ConnectionCheckTimeout = 15000000;
-
-        private readonly ITestOutputHelper _testOutputHelper;
-        private readonly Stopwatch _stopwatch;
-        private readonly UdpClient _udpServer;
-
-        public TestSuite(ITestOutputHelper testOutputHelper)
-        {
-            _testOutputHelper = testOutputHelper;
-            _stopwatch = new Stopwatch();
-            _udpServer = new UdpClient(Port);
-            Task.Run(() =>
-            {
-                for (int i = 0; i < 10; i++)
-                {
-                    var remoteEP = new IPEndPoint(IPAddress.Any, Port);
-                    var received = _udpServer.Receive(ref remoteEP);
-                    _testOutputHelper.WriteLine(Encoding.ASCII.GetString(received));
-                }
-            });
-        }
-
         [Fact]
-        public void ImmediateConnectionCheckAndOneMessageSend()
+        public void ImmediateConnectionCheckWithPlainSocket()
         {
-            using (var udp = new UdpClient(IpAddress, Port))
+            const int connectionCheckTimeout = 3005000;
+            var stopwatch = new Stopwatch();
+            using (var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp))
             {
-                CheckConnectionAssertCheckWasInstantaneousSend(udp, 1);
+                socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
+
+                // socket.Poll(timeout, selectMode)
+                //
+                // SelectMode.SelectRead
+                // true if Listen(Int32) has been called and a connection is pending
+                // true if data is available for reading
+                // true if the connection has been closed, reset, or terminated
+                // false otherwise
+                //
+                // SelectMode.SelectWrite
+                // true if processing a Connect(EndPoint) and the connection has succeeded
+                // true if data can be sent
+                // false otherwise
+                //
+                // The Poll method will check the state of the Socket:
+                //  - SelectMode.SelectRead to determine if the Socket is readable
+                //  - SelectMode.SelectWrite to determine if the Socket is writable
+                //  - SelectError to detect an error condition
+                // Poll will block execution until the specified time period, measured in microseconds, elapses
+                // This method cannot detect certain kinds of connection problems, such as a broken network cable,
+                // or that the remote host was shut down ungracefully
+                // You must attempt to send or receive data to detect these kinds of errors
+                stopwatch.Restart();
+                var pollResult = socket.Poll(connectionCheckTimeout, SelectMode.SelectRead);
+                stopwatch.Stop();
+
+                Assert.False(pollResult);
+                Assert.Equal(0, stopwatch.ElapsedMilliseconds / 1000);
             }
-        }
-
-        [Fact]
-        public void ImmediateConnectionCheckAndTwoMessageSend()
-        {
-            using (var udp = new UdpClient(IpAddress, Port))
-            {
-                CheckConnectionAssertCheckWasInstantaneousSend(udp, 1);
-                CheckConnectionAssertCheckWasInstantaneousSend(udp, 2);
-            }
-        }
-
-        public void Dispose()
-        {
-            _stopwatch.Stop();
-            _udpServer.Dispose();
-        }
-
-        private void CheckConnectionAssertCheckWasInstantaneousSend(UdpClient udp, int i)
-        {
-            _stopwatch.Restart();
-            var isConnected = IsConnected(udp?.Client, ConnectionCheckTimeout);
-            _stopwatch.Stop();
-            Assert.True(isConnected);
-            Assert.Equal(0, _stopwatch.ElapsedMilliseconds / 1000);
-            var bytes = new ASCIIEncoding().GetBytes($"my message {i}");
-            udp.Send(bytes, bytes.Length);
-        }
-
-        private bool IsConnected(Socket socket, int timeout)
-        {
-            if (socket == null)
-                return true;
-
-            if (timeout <= 0)
-                return true;
-
-            var isDisconnected = socket?.Poll(timeout, SelectMode.SelectRead) == true && socket?.Available == 0;
-            return !isDisconnected;
         }
     }
 }
