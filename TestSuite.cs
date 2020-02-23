@@ -8,12 +8,24 @@ namespace SocketPoll
 {
     public class TestSuite
     {
+        const int PollTimeout = 3005000;
+        private readonly Stopwatch stopwatch = new Stopwatch();
+
         [Fact]
-        public void ImmediateConnectionCheckWithPlainSocket()
+        public void ImmediatePollOfPlainTcpSocket()
         {
-            const int connectionCheckTimeout = 3005000;
-            var stopwatch = new Stopwatch();
-            using (var socket = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp))
+            ImmediatePollOfPlainSocket(SocketType.Stream, ProtocolType.Tcp);
+        }
+
+        [Fact]
+        public void ImmediatePollOfPlainUdpSocket()
+        {
+            ImmediatePollOfPlainSocket(SocketType.Dgram, ProtocolType.Udp);
+        }
+
+        private void ImmediatePollOfPlainSocket(SocketType socketType, ProtocolType protocolType)
+        {
+            using (var socket = new Socket(AddressFamily.InterNetwork, socketType, protocolType))
             {
                 socket.Bind(new IPEndPoint(IPAddress.Loopback, 0));
 
@@ -39,7 +51,7 @@ namespace SocketPoll
                 // or that the remote host was shut down ungracefully
                 // You must attempt to send or receive data to detect these kinds of errors
                 stopwatch.Restart();
-                var pollResult = socket.Poll(connectionCheckTimeout, SelectMode.SelectRead);
+                var pollResult = socket.Poll(PollTimeout, SelectMode.SelectRead);
                 stopwatch.Stop();
 
                 Assert.False(pollResult);
